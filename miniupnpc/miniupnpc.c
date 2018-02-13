@@ -1214,7 +1214,7 @@ UPNP_GetValidIGD(struct UPNPDev * devlist,
 
 #ifdef DEBUG
 			FILE *xml_fd;
-			xml_fd = fopen("/tmp/upnpc_xml.log", "w");
+			xml_fd = fopen("/tmp/upnpc_xml.log", "a");
 			fprintf(xml_fd, "============= XML ==============\n");
 			fprintf(xml_fd, "%s\n", desc[i].xml);
 			parsedescxml(desc[i].xml, &IGDInfo.friendlyName, &IGDInfo.iconUrl);
@@ -1264,7 +1264,7 @@ UPNP_GetValidIGD(struct UPNPDev * devlist,
 				}
 			get_icon:
 #ifdef DEBUG
-                                syslog(LOG_NOTICE, "Real icon url: %s", realIconUrl);
+				syslog(LOG_NOTICE, "Real icon url: %s", realIconUrl);
                                 fprintf(xml_fd, "Real icon url: %s\n", realIconUrl);
 #endif
                                 sprintf(iconFile, "/tmp/upnpicon/%s.ico", IGDInfo.hostname);
