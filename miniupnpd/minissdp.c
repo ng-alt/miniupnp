@@ -838,8 +838,8 @@ ProcessSSDPData(int s, const char *bufr, int n,
 	lan_addr = get_lan_for_peer(sender);
 	if(lan_addr == NULL)
 	{
-		syslog(LOG_WARNING, "SSDP packet sender %s not from a LAN, ignoring",
-		       sender_str);
+//		syslog(LOG_WARNING, "SSDP packet sender %s not from a LAN, ignoring",
+//		       sender_str);
 		return;
 	}
 
@@ -1126,7 +1126,7 @@ ProcessSSDPData(int s, const char *bufr, int n,
 	}
 	else
 	{
-		syslog(LOG_NOTICE, "Unknown udp packet received from %s", sender_str);
+		syslog(LOG_INFO, "Unknown udp packet received from %s", sender_str);
 	}
 }
 
