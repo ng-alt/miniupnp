@@ -1,5 +1,5 @@
 #! /usr/bin/python
-# $Id: setup.py,v 1.9 2012/05/23 08:50:10 nanard Exp $
+# $Id: setup.py,v 1.10 2014/05/19 22:31:52 nanard Exp $
 # the MiniUPnP Project (c) 2007-2014 Thomas Bernard
 # http://miniupnp.tuxfamily.org/ or http://miniupnp.free.fr/
 #

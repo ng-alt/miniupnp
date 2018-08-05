@@ -1,4 +1,4 @@
-/* $Id: miniwget.c,v 1.65 2014/11/04 22:31:55 nanard Exp $ */
+/* $Id: miniwget.c,v 1.66 2014/11/19 15:18:47 nanard Exp $ */
 /* Project : miniupnp
  * Website : http://miniupnp.free.fr/
  * Author : Thomas Bernard
@@ -32,6 +32,7 @@
 #else /* #if defined(__amigaos__) && !defined(__amigaos4__) */
 #include <sys/select.h>
 #endif /* #else defined(__amigaos__) && !defined(__amigaos4__) */
+#include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -53,6 +54,7 @@
 #include "miniwget.h"
 #include "connecthostport.h"
 #include "receivedata.h"
+#include "miniupnpc.h"
 
 #ifndef MAXHOSTNAMELEN
 #define MAXHOSTNAMELEN 64
@@ -65,7 +67,7 @@
  * to the length parameter.
  */
 void *
-getHTTPResponse(int s, int * size)
+getHTTPResponse(int s, int * size, struct UPNPDevInfo *devinfo)
 {
 	char buf[2048];
 	int n;
@@ -91,6 +93,11 @@ getHTTPResponse(int s, int * size)
 
 	while((n = receivedata(s, buf, 2048, 5000, NULL)) > 0)
 	{
+/*
+printf("==============\n");
+printf("%s\n",buf);
+printf("==============\n");
+*/
 		if(endofheaders == 0)
 		{
 			int i;
@@ -147,6 +154,7 @@ getHTTPResponse(int s, int * size)
 						printf("header='%.*s', value='%.*s'\n",
 						       colon-linestart, header_buf+linestart,
 						       i-valuestart, header_buf+valuestart);
+/*printf("colon= %d, i= %d\n", colon-linestart, i-valuestart);*/
 #endif
 						if(0==strncasecmp(header_buf+linestart, "content-length", colon-linestart))
 						{
@@ -162,6 +170,26 @@ getHTTPResponse(int s, int * size)
 							printf("chunked transfer-encoding!\n");
 #endif
 							chunked = 1;
+						}
+						else if(0==strncasecmp(header_buf+linestart, "server", colon-linestart))
+						{
+						        char *end_ptr;
+							int get_server = 0;
+							end_ptr = strchr(header_buf+valuestart, ' ');
+						        if( end_ptr != NULL )
+							{
+						                *end_ptr = '\0';
+								get_server = 1;
+							}
+							end_ptr = strchr(header_buf+valuestart,'\n');
+							if( end_ptr != NULL )
+							{
+                                                                *end_ptr = '\0';
+								get_server = 1;
+							}
+						        /*printf("Server: %s\n", header_buf+valuestart);*/
+							if( get_server )
+						                strcpy(devinfo->type, header_buf+valuestart);
 						}
 					}
 					while((i < (int)header_buf_used) && (header_buf[i]=='\r' || header_buf[i] == '\n'))
@@ -296,7 +324,8 @@ static void *
 miniwget3(const char * host,
           unsigned short port, const char * path,
           int * size, char * addr_str, int addr_str_len,
-          const char * httpversion, unsigned int scope_id)
+          const char * httpversion, unsigned int scope_id,
+	  struct UPNPDevInfo *devinfo)
 {
 	char buf[2048];
     int s;
@@ -389,7 +418,7 @@ miniwget3(const char * host,
 			sent += n;
 		}
 	}
-	content = getHTTPResponse(s, size);
+	content = getHTTPResponse(s, size, devinfo);
 	closesocket(s);
 	return content;
 }
@@ -398,15 +427,15 @@ miniwget3(const char * host,
  * Call miniwget3(); retry with HTTP/1.1 if 1.0 fails. */
 static void *
 miniwget2(const char * host,
-		  unsigned short port, const char * path,
-		  int * size, char * addr_str, int addr_str_len,
-          unsigned int scope_id)
+	  unsigned short port, const char * path,
+	  int * size, char * addr_str, int addr_str_len,
+          unsigned int scope_id, struct UPNPDevInfo *devinfo)
 {
 	char * respbuffer;
 
 #if 1
 	respbuffer = miniwget3(host, port, path, size,
-	                       addr_str, addr_str_len, "1.1", scope_id);
+	                       addr_str, addr_str_len, "1.1", scope_id, devinfo);
 #else
 	respbuffer = miniwget3(host, port, path, size,
 	                       addr_str, addr_str_len, "1.0", scope_id);
@@ -542,7 +571,7 @@ parseURL(const char * url,
 }
 
 void *
-miniwget(const char * url, int * size, unsigned int scope_id)
+miniwget(const char * url, int * size, unsigned int scope_id, struct UPNPDevInfo *devinfo)
 {
 	unsigned short port;
 	char * path;
@@ -555,26 +584,57 @@ miniwget(const char * url, int * size, unsigned int scope_id)
 	printf("parsed url : hostname='%s' port=%hu path='%s' scope_id=%u\n",
 	       hostname, port, path, scope_id);
 #endif
-	return miniwget2(hostname, port, path, size, 0, 0, scope_id);
+	return miniwget2(hostname, port, path, size, 0, 0, scope_id, devinfo);
 }
 
 void *
 miniwget_getaddr(const char * url, int * size,
-                 char * addr, int addrlen, unsigned int scope_id)
+                 char * addr, int addrlen, unsigned int scope_id, struct UPNPDevInfo *devinfo, char * dut_addr)
 {
 	unsigned short port;
 	char * path;
 	/* protocol://host:port/path */
 	char hostname[MAXHOSTNAMELEN+1];
 	*size = 0;
+
 	if(addr)
 		addr[0] = '\0';
 	if(!parseURL(url, hostname, &port, &path, &scope_id))
 		return NULL;
 #ifdef DEBUG
-	printf("parsed url : hostname='%s' port=%hu path='%s' scope_id=%u\n",
-	       hostname, port, path, scope_id);
+        printf("parsed url : hostname='%s' port=%hu path='%s' scope_id=%u\n",
+               hostname, port, path, scope_id);
 #endif
-	return miniwget2(hostname, port, path, size, addr, addrlen, scope_id);
+	if(0)//(dut_addr != NULL) //bypass subnetwork check
+	{
+		char *ptr, *head;
+		int i = 0;
+		head = dut_addr;
+		while (1)
+		{
+			ptr = strchr(head, '.');
+			if(ptr)
+			{
+				head = (ptr+1);
+				i++;
+				if(i == 3)
+				{
+					i = ptr - dut_addr;
+					break;
+				}
+			}
+			else
+			{
+				i = 0;
+				break;
+			}
+		}
+		if(strncmp(hostname, dut_addr, i)) 
+			return NULL;
+	}
+
+	strcpy(devinfo->hostname, hostname);
+
+	return miniwget2(hostname, port, path, size, addr, addrlen, scope_id, devinfo);
 }
 

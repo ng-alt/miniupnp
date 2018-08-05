@@ -1,4 +1,4 @@
-/* $Id: miniupnpc.c,v 1.122 2014/11/17 22:59:54 nanard Exp $ */
+/* $Id: miniupnpc.c,v 1.123 2014/11/27 12:02:25 nanard Exp $ */
 /* Project : miniupnp
  * Web : http://miniupnp.free.fr/
  * Author : Thomas BERNARD
@@ -49,6 +49,8 @@
 #else
 #include <sys/select.h>
 #endif
+#include <syslog.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/param.h>
@@ -74,6 +76,7 @@
 #define MAXHOSTNAMELEN 64
 #endif
 
+#include <shared.h>
 
 #if defined(HAS_IP_MREQN) && defined(NEED_STRUCT_IP_MREQN)
 /* Several versions of glibc don't define this structure, define it here and compile with CFLAGS NEED_STRUCT_IP_MREQN */
@@ -111,6 +114,7 @@ struct ip_mreqn
 #define SERVICEPREFIX "u"
 #define SERVICEPREFIX2 'u'
 
+
 /* root description parsing */
 MINIUPNP_LIBSPEC void parserootdesc(const char * buffer, int bufsize, struct IGDdatas * data)
 {
@@ -125,7 +129,9 @@ MINIUPNP_LIBSPEC void parserootdesc(const char * buffer, int bufsize, struct IGD
 	parser.attfunc = 0;
 	parsexml(&parser);
 #ifdef DEBUG
+/*
 	printIGD(data);
+*/
 #endif
 }
 
@@ -229,7 +235,7 @@ char * simpleUPnPcommand2(int s, const char * url, const char * service,
 		return NULL;
 	}
 
-	buf = getHTTPResponse(s, bufsize);
+	buf = getHTTPResponse(s, bufsize, NULL);
 #ifdef DEBUG
 	if(*bufsize > 0 && buf)
 	{
@@ -406,6 +412,7 @@ upnpDiscoverDevices(const char * const deviceTypes[],
 		PRINT_SOCKET_ERROR("socket");
 		return NULL;
 	}
+
 	/* reception */
 	memset(&sockudp_r, 0, sizeof(struct sockaddr_storage));
 	if(ipv6) {
@@ -725,8 +732,8 @@ upnpDiscover(int delay, const char * multicastif,
 		"urn:schemas-upnp-org:service:WANIPConnection:2",
 #endif
 		"urn:schemas-upnp-org:device:InternetGatewayDevice:1",
-		"urn:schemas-upnp-org:service:WANIPConnection:1",
-		"urn:schemas-upnp-org:service:WANPPPConnection:1",
+		//"urn:schemas-upnp-org:service:WANIPConnection:1",
+		//"urn:schemas-upnp-org:service:WANPPPConnection:1",
 		"upnp:rootdevice",
 		/*"ssdp:all",*/
 		0
@@ -914,8 +921,222 @@ UPNPIGD_IsConnected(struct UPNPUrls * urls, struct IGDdatas * data)
 		return 0;
 }
 
+void parsedescxml(char *msg, char *friendly_name, char *icon_url)
+{
+        char line[200], *body, *p, *mxend;
+        char tmp[200];
+        int i, j;
+        int s_num = 0;
+        int type = 0;
+	char *head, *end;
+        char *opts[] = {"<friendlyName>","<manufacturer>", "<presentationURL>",
+                        "<modelDescription>", "<modelName>", "<modelNumber>",
+                        "<serviceType>", "<SCPDURL>", "<icon>"
+                        };
 
-/* UPNP_GetValidIGD() :
+	char *icon_desc_end, *url_ptr;
+	int get_icon_url = 0;
+
+        /* pointer to the head of msg */
+        p = strstr(msg, "<?xml");
+        /* pointer to the end of msg */
+        body = strstr(msg, "</root>");
+
+        while( p!= NULL && p < body)
+        {
+                /* get rid of 'TAB' or 'Space' in the start of a line. */
+                while((*p == '\r' || *p == '\n' || *p == '\t' || *p == ' ') && p < body)
+                        p ++;
+
+                /* get a line. */
+                i = 0;
+                while(*p != '>' && p < body)
+                {
+                    if(i<199)
+                        line[i++] = *p++;
+                    else
+                        *p++;
+                }
+                if(p == body)
+                {
+                        break;
+                }
+
+                line[i++] = *p++;
+                line[i] ='\0';
+
+                if(p == body)
+                        break;
+
+                /* judge whether this line is useful. */
+                for(type = 0; type< sizeof(opts)/sizeof(*opts); type++)
+                        if(strncmp(line, opts[type], strlen(opts[type])) == 0)
+                                break;
+
+                if(type == sizeof(opts)/sizeof(*opts))
+                        continue;
+
+
+                /* get the information.
+                 * eg. <manufacturer> information </manufacturer>
+		 */
+
+	if((type == 8) && (!get_icon_url)) {
+		icon_desc_end = strstr(p, "</icon>");
+
+		i = 0;
+		while(p < icon_desc_end) {
+	        	if(i<199)
+        	                line[i++] = *p++;
+                    	else
+                        	*p++;
+		}
+                line[i++] = *p++;
+                line[i] ='\0';
+		p = icon_desc_end + 7;
+	}
+	else {
+
+                i = 0;
+                while(*p != '>' && p < body)
+                {
+                    if(i<199)
+                        line[i++] = *p++;
+                    else
+                        *p++;
+                }
+                line[i++] = *p++;
+                line[i] ='\0';
+                for(j =0; line[j] != '<'; j++)
+                        tmp[j] = line[j];
+                tmp[j] = '\0';
+ } 
+
+                switch(type)
+                {
+                case 0:
+#ifdef DEBUG
+			printf( "friendlyname = %s\n", tmp);
+#endif
+			if(strstr(tmp,"WPS Router") || strstr(tmp,"Device"))
+				break;
+
+			if( (end = strchr(tmp, '(')) != NULL )
+                        {
+                                *end = '\0';
+                                strcpy(friendly_name, tmp);
+                        }
+                        else if( (end = strchr(tmp, ':')) != NULL )
+			{
+				*end = '\0';
+				strcpy(friendly_name, tmp);
+			}
+			else if( (head = strchr(tmp,'['))!=NULL && (end = strchr(tmp,']'))!=NULL )
+			{
+				if( head < end )
+				{
+					*end = '\0';
+					strcpy(friendly_name, head+1);
+				}
+			}
+			else
+			{
+				if(tmp!=NULL)
+					strcpy(friendly_name, tmp);
+			}
+                        break;
+#ifdef DEBUG
+                case 1:
+                        printf("manufacturer = %s\n", tmp);
+                        break;
+                case 2:
+                        printf("presentation = %s\n", tmp);
+                        break;
+                case 3:
+                        printf("description = %s\n", tmp);
+
+                        break;
+                case 4:
+                        printf("modelname = %s\n", tmp);
+                        break;
+                case 5:
+                        printf("modelnumber = %s\n", tmp);
+                        break;
+#endif
+                case 6: /* tmp="urn:schemas-upnp-org:service:serviceType:v" */
+                        mxend = tmp;
+                        i = 0; j = 0;
+                        while(i != 4)
+                        {
+                                if(i == 3)
+                                        tmp[j++] = *mxend;
+                                if(*mxend == ':')
+                                        i++;
+                                mxend++;
+                        }
+                        tmp[j-1] = '\0';
+#ifdef DEBUG
+                        printf("service name = %s\n", tmp);
+#endif
+                        break;
+                case 7:
+#ifdef DEBUG
+                        printf("service url = %s\n", tmp);
+#endif
+                        break;
+                case 8:
+	                if(strstr(line, "jpeg")||strstr(line, "png")) {
+        	                if( url_ptr = strstr(line,"<url>")) {
+                	                url_ptr = url_ptr + 5;
+                        	        i = 0;
+                                	while(*url_ptr != '<')
+                                        	tmp[i++] = *url_ptr++;
+                                	tmp[i] = '\0';
+					strcpy(icon_url, tmp);
+#ifdef DEBUG
+					printf("icon url =%s\n", tmp);
+#endif
+					get_icon_url = 1;
+				}
+                        }
+                        break;
+                }
+        }
+
+}
+
+char *
+get_lan_ipaddr()
+{
+        int s;
+        struct ifreq ifr;
+        struct sockaddr_in *inaddr;
+        struct in_addr ip_addr;
+
+        /* Retrieve IP info */
+        if ((s = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) < 0)
+#if 0
+                return strdup("0.0.0.0");
+#else
+        {
+                memset(&ip_addr, 0x0, sizeof(ip_addr));
+                return inet_ntoa(ip_addr);
+        }
+#endif
+
+        strncpy(ifr.ifr_name, "br0", IFNAMSIZ);
+        inaddr = (struct sockaddr_in *)&ifr.ifr_addr;
+        inet_aton("0.0.0.0", &inaddr->sin_addr);
+
+        /* Get IP address */
+        ioctl(s, SIOCGIFADDR, &ifr);
+        close(s);
+
+        ip_addr = ((struct sockaddr_in*)&ifr.ifr_addr)->sin_addr;
+        return inet_ntoa(ip_addr);
+}
+
+/* UPNP_GetValidIGDe) :
  * return values :
  *    -1 = Internal error
  *     0 = NO IGD found
@@ -945,6 +1166,10 @@ UPNP_GetValidIGD(struct UPNPDev * devlist,
 	int state = -1; /* state 1 : IGD connected. State 2 : IGD. State 3 : anything */
 	int n_igd = 0;
 	char extIpAddr[16];
+	struct UPNPDevInfo IGDInfo;
+	char *dut_lanaddr;
+	char IGDDescURL[256];
+
 	if(!devlist)
 	{
 #ifdef DEBUG
@@ -961,14 +1186,20 @@ UPNP_GetValidIGD(struct UPNPDev * devlist,
 		if(!desc)
 			return -1; /* memory allocation error */
 	}
+
+	dut_lanaddr = get_lan_ipaddr();
+	
 	/* Step 1 : downloading descriptions and testing type */
 	for(dev = devlist, i = 0; dev; dev = dev->pNext, i++)
 	{
+		memset(&IGDInfo, 0, sizeof(struct UPNPDevInfo));
 		/* we should choose an internet gateway device.
 		 * with st == urn:schemas-upnp-org:device:InternetGatewayDevice:1 */
+		strcpy(IGDDescURL, dev->descURL);
 		desc[i].xml = miniwget_getaddr(dev->descURL, &(desc[i].size),
 		                               lanaddr, lanaddrlen,
-		                               dev->scope_id);
+		                               dev->scope_id, &IGDInfo, dut_lanaddr);
+
 #ifdef DEBUG
 		if(!desc[i].xml)
 		{
@@ -979,17 +1210,108 @@ UPNP_GetValidIGD(struct UPNPDev * devlist,
 		{
 			memset(data, 0, sizeof(struct IGDdatas));
 			memset(urls, 0, sizeof(struct UPNPUrls));
-			parserootdesc(desc[i].xml, desc[i].size, data);
+			/* parserootdesc(desc[i].xml, desc[i].size, data); */
+
+#ifdef DEBUG
+			FILE *xml_fd;
+			xml_fd = fopen("/tmp/upnpc_xml.log", "w");
+			fprintf(xml_fd, "============= XML ==============\n");
+			fprintf(xml_fd, "%s\n", desc[i].xml);
+			parsedescxml(desc[i].xml, &IGDInfo.friendlyName, &IGDInfo.iconUrl);
+	                fprintf(xml_fd, "    HostName: %s\n", IGDInfo.hostname);
+        	        fprintf(xml_fd, "    type:     %s\n", IGDInfo.type);
+                	fprintf(xml_fd, "    F Name:   %s\n", IGDInfo.friendlyName);
+			fprintf(xml_fd, "    Icon URL: %s\n", IGDInfo.iconUrl);
+			fprintf(xml_fd, "================================\n\n");
+			syslog(LOG_NOTICE, "parse icon url: %s", IGDInfo.iconUrl);
+#endif
+
+			strcpy(dev->DevInfo.hostname, IGDInfo.hostname);
+			strcpy(dev->DevInfo.type, IGDInfo.type);
+			strcpy(dev->DevInfo.friendlyName, IGDInfo.friendlyName);
+			strcpy(dev->DevInfo.iconUrl, IGDInfo.iconUrl);
+
+#ifdef RTCONFIG_JFFS2USERICON
+			if(strcmp(IGDInfo.iconUrl, "") != NULL) {
+				char realIconUrl[158], iconFile[32], iconBuf[512];
+				char *ico_head, *ico_end;
+				char *icon, *p, *q;
+				int  iconSize, i = 0, iconCheck = 0;
+				FILE *ico_fd;
+
+				memset(realIconUrl, 0, 158);
+				if(strstr(IGDInfo.iconUrl, "http://")) {
+					strcpy(realIconUrl, IGDInfo.iconUrl);
+				}
+				else {
+				    q = IGDDescURL;
+				    while(q = strchr(q, '/')) {
+					i++;
+					if(i == 3) {
+						p = IGDDescURL;
+						i = 0;
+						while ( p < q ) {
+							realIconUrl[i++] = *p++;
+						}
+						strcat(realIconUrl, IGDInfo.iconUrl);
+					#ifdef DEBUG
+						printf("\n*** Real URL=%s=\n\n", realIconUrl);
+					#endif
+						break;
+					}
+					q++;
+				    }
+				}
+			get_icon:
+#ifdef DEBUG
+                                syslog(LOG_NOTICE, "Real icon url: %s", realIconUrl);
+                                fprintf(xml_fd, "Real icon url: %s\n", realIconUrl);
+#endif
+                                sprintf(iconFile, "/tmp/upnpicon/%s.ico", IGDInfo.hostname);
+
+				icon = miniwget_getaddr(realIconUrl, &iconSize,
+                                               lanaddr, lanaddrlen,
+                                               0, &IGDInfo, dut_lanaddr);
+
+				if( iconSize > 512 ) {
+					ico_fd = fopen(iconFile, "w");
+					if(ico_fd) {
+					fwrite(icon, sizeof(char), iconSize, ico_fd);
+					fclose(ico_fd);
+					}
+				}
+				else if(iconSize > 0) {
+					ico_head = strstr(icon, "<a href=");
+					if(ico_head) {
+						ico_head = ico_head+9;
+						ico_end = strstr(icon, "\">");
+						if(ico_end) {
+							*ico_end = '\0';
+							strcpy(realIconUrl, ico_head);
+							goto get_icon;
+						}
+					}
+                                }
+			}
+#endif
+
 			if(COMPARE(data->CIF.servicetype,
 			           "urn:schemas-upnp-org:service:WANCommonInterfaceConfig:"))
 			{
 				desc[i].is_igd = 1;
 				n_igd++;
 			}
+#ifdef DEBUG
+			fclose(xml_fd);
+#endif
 		}
+		else
+			memset(dev->DevInfo.hostname, 0, 65);
 	}
+
 	/* iterate the list to find a device depending on state */
 	for(state = 1; state <= 3; state++)
+	/*if(0)*/
 	{
 		for(dev = devlist, i = 0; dev; dev = dev->pNext, i++)
 		{
@@ -1066,8 +1388,9 @@ UPNP_GetIGDFromUrl(const char * rootdescurl,
 {
 	char * descXML;
 	int descXMLsize = 0;
+
 	descXML = miniwget_getaddr(rootdescurl, &descXMLsize,
-	   	                       lanaddr, lanaddrlen, 0);
+	   	                       lanaddr, lanaddrlen, 0, NULL, NULL);
 	if(descXML) {
 		memset(data, 0, sizeof(struct IGDdatas));
 		memset(urls, 0, sizeof(struct UPNPUrls));

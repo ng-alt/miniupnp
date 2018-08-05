@@ -10,8 +10,14 @@
 # $ INSTALLPREFIX=/usr/local make install
 # or
 # $ make install (default INSTALLPREFIX is /usr)
-OS = $(shell uname -s)
-VERSION = $(shell cat VERSION)
+
+include ../common.mak
+include ../.config
+
+OS = Linux
+VERSION = 2.6.36
+#OS = $(shell uname -s)
+#VERSION = $(shell cat VERSION)
 
 ifeq ($(OS), Darwin)
 JARSUFFIX=mac
@@ -23,22 +29,23 @@ ifneq (,$(findstring NT-5.1,$(OS)))
 JARSUFFIX=win32
 endif
 
-HAVE_IPV6 ?= yes
-export HAVE_IPV6
+#HAVE_IPV6 ?= yes
+#export HAVE_IPV6
 
-CC ?= gcc
+#CC ?= gcc
 #AR = gar
-#CFLAGS = -O -g -DDEBUG
-CFLAGS ?= -O
+CFLAGS += -O2 -s
+#CFLAGS += -DDEBUG
+FLAGS ?= -O
 CFLAGS += -Wall
 CFLAGS += -W -Wstrict-prototypes
 CFLAGS += -fno-common
 CFLAGS += -DMINIUPNPC_SET_SOCKET_TIMEOUT
 CFLAGS += -DMINIUPNPC_GET_SRC_ADDR
 CFLAGS += -D_BSD_SOURCE -D_POSIX_C_SOURCE=200112L
-CFLAGS += -ansi
+#CFLAGS += -ansi
 # -DNO_GETADDRINFO
-INSTALL = install
+#INSTALL = install
 SH = /bin/sh
 JAVA = java
 # see http://code.google.com/p/jnaerator/
@@ -49,6 +56,17 @@ JAVA = java
 JNAERATOR = jnaerator-0.11-shaded.jar
 JNAERATORARGS = -mode StandaloneJar -runtime JNAerator -library miniupnpc
 JNAERATORBASEURL = http://jnaerator.googlecode.com/files/
+
+CFLAGS += -I$(TOP)/shared -I$(SRCBASE)/include
+LDFLAGS += -L$(TOP)/shared -lshared  -L$(TOP)/nvram${BCMEX} -lnvram
+
+ifeq ($(RTCONFIG_BCMARM),y)
+LDFLAGS += -lgcc_s
+endif
+
+ifeq ($(RTCONFIG_QTN),y)
+LDFLAGS += -L$(TOP)/libqcsapi_client -lqcsapi_client
+endif
 
 ifeq (SunOS, $(OS))
   LDFLAGS=-lsocket -lnsl -lresolv
@@ -117,9 +135,9 @@ TESTIGDDESCPARSE = testigddescparse.o igd_desc_parse.o minixml.o \
                    portlistingparse.o
 
 ifneq ($(OS), AmigaOS)
-EXECUTABLES := $(EXECUTABLES) upnpc-shared
-TESTMINIWGETOBJS := $(TESTMINIWGETOBJS) minissdpc.o
-TESTIGDDESCPARSE := $(TESTIGDDESCPARSE) minissdpc.o
+#EXECUTABLES := $(EXECUTABLES) upnpc-shared
+#TESTMINIWGETOBJS := $(TESTMINIWGETOBJS) minissdpc.o
+#TESTIGDDESCPARSE := $(TESTIGDDESCPARSE) minissdpc.o
 endif
 
 LIBDIR ?= lib
@@ -209,29 +227,29 @@ updateversion:	miniupnpc.h
 	cp miniupnpc.h miniupnpc.h.bak
 	sed 's/\(.*MINIUPNPC_API_VERSION\s\+\)[0-9]\+/\1$(APIVERSION)/' < miniupnpc.h.bak > miniupnpc.h
 
-install:	updateversion $(FILESTOINSTALL)
-	$(INSTALL) -d $(DESTDIR)$(INSTALLDIRINC)
-	$(INSTALL) -m 644 $(HEADERS) $(DESTDIR)$(INSTALLDIRINC)
-	$(INSTALL) -d $(DESTDIR)$(INSTALLDIRLIB)
-	$(INSTALL) -m 644 $(LIBRARY) $(DESTDIR)$(INSTALLDIRLIB)
-ifneq ($(OS), AmigaOS)
-	$(INSTALL) -m 644 $(SHAREDLIBRARY) $(DESTDIR)$(INSTALLDIRLIB)/$(SONAME)
-	ln -fs $(SONAME) $(DESTDIR)$(INSTALLDIRLIB)/$(SHAREDLIBRARY)
-endif
-	$(INSTALL) -d $(DESTDIR)$(INSTALLDIRBIN)
-ifeq ($(OS), AmigaOS)
-	$(INSTALL) -m 755 upnpc-static $(DESTDIR)$(INSTALLDIRBIN)/upnpc
-else
-	$(INSTALL) -m 755 upnpc-shared $(DESTDIR)$(INSTALLDIRBIN)/upnpc
-endif
-	$(INSTALL) -m 755 external-ip.sh $(DESTDIR)$(INSTALLDIRBIN)/external-ip
-ifneq ($(OS), AmigaOS)
-	$(INSTALL) -d $(DESTDIR)$(INSTALLDIRMAN)/man3
-	$(INSTALL) -m 644 man3/miniupnpc.3 $(DESTDIR)$(INSTALLDIRMAN)/man3/miniupnpc.3
-ifeq ($(OS), Linux)
-	gzip -f $(DESTDIR)$(INSTALLDIRMAN)/man3/miniupnpc.3
-endif
-endif
+#install:	updateversion $(FILESTOINSTALL)
+#	$(INSTALL) -d $(DESTDIR)$(INSTALLDIRINC)
+#	$(INSTALL) -m 644 $(HEADERS) $(DESTDIR)$(INSTALLDIRINC)
+#	$(INSTALL) -d $(DESTDIR)$(INSTALLDIRLIB)
+#	$(INSTALL) -m 644 $(LIBRARY) $(DESTDIR)$(INSTALLDIRLIB)
+#ifneq ($(OS), AmigaOS)
+#	$(INSTALL) -m 644 $(SHAREDLIBRARY) $(DESTDIR)$(INSTALLDIRLIB)/$(SONAME)
+#	ln -fs $(SONAME) $(DESTDIR)$(INSTALLDIRLIB)/$(SHAREDLIBRARY)
+#endif
+#	$(INSTALL) -d $(DESTDIR)$(INSTALLDIRBIN)
+#ifeq ($(OS), AmigaOS)
+#	$(INSTALL) -m 755 upnpc-static $(DESTDIR)$(INSTALLDIRBIN)/upnpc
+#else
+#	$(INSTALL) -m 755 upnpc-shared $(DESTDIR)$(INSTALLDIRBIN)/upnpc
+#endif
+#	$(INSTALL) -m 755 external-ip.sh $(DESTDIR)$(INSTALLDIRBIN)/external-ip
+#ifneq ($(OS), AmigaOS)
+#	$(INSTALL) -d $(DESTDIR)$(INSTALLDIRMAN)/man3
+#	$(INSTALL) -m 644 man3/miniupnpc.3 $(DESTDIR)$(INSTALLDIRMAN)/man3/miniupnpc.3
+#ifeq ($(OS), Linux)
+#	gzip -f $(DESTDIR)$(INSTALLDIRMAN)/man3/miniupnpc.3
+#endif
+#endif
 
 
 cleaninstall:
@@ -256,8 +274,8 @@ endif
 upnpc-static:	upnpc.o $(LIBRARY)
 	$(CC) $(LDFLAGS) -o $@ $^
 
-upnpc-shared:	upnpc.o $(SHAREDLIBRARY)
-	$(CC) $(LDFLAGS) -o $@ $^
+#upnpc-shared:	upnpc.o $(SHAREDLIBRARY)
+#	$(CC) $(LDFLAGS) -o $@ $^
 
 listdevices:	listdevices.o $(LIBRARY) $(LDLIBS)
 	$(CC) $(LDFLAGS) -o $@ $^

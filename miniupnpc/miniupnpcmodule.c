@@ -1,4 +1,4 @@
-/* $Id: miniupnpcmodule.c,v 1.24 2014/06/10 09:48:11 nanard Exp $*/
+/* $Id: miniupnpcmodule.c,v 1.25 2014/09/06 08:08:25 nanard Exp $*/
 /* Project : miniupnp
  * Author : Thomas BERNARD
  * website : http://miniupnp.tuxfamily.org/

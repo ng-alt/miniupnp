@@ -1,4 +1,4 @@
-/* $Id: minissdpc.c,v 1.15 2012/01/21 13:30:31 nanard Exp $ */
+/* $Id: minissdpc.c,v 1.18 2014/11/17 09:41:32 nanard Exp $ */
 /* Project : miniupnp
  * Web : http://miniupnp.free.fr/
  * Author : Thomas BERNARD

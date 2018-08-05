@@ -21,6 +21,365 @@
 #include "upnpcommands.h"
 #include "upnperrors.h"
 
+#include <shared.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sysinfo.h>
+#include <errno.h>
+
+#ifdef RTCONFIG_JFFS2USERICON
+#define JFFS_ICON_PATH	"/jffs/usericon"
+#define UPNP_ICON_PATH	"/tmp/upnpicon"
+
+typedef struct {
+        unsigned char   ip_addr[255][4];
+        unsigned char   mac_addr[255][6];
+        unsigned char   user_define[255][16];
+        unsigned char   device_name[255][32];
+        unsigned char   apl_dev[255][16];
+        int             type[255];
+        int             http[255];
+        int             printer[255];
+        int             itune[255];
+        int             exist[255];
+#ifdef RTCONFIG_BWDPI
+        char            bwdpi_hostname[255][32];
+        char            bwdpi_devicetype[255][100];
+#endif
+        int             ip_mac_num;
+        int             detail_info_num;
+} CLIENT_DETAIL_INFO_TABLE, *P_CLIENT_DETAIL_INFO_TABLE;
+
+//the crc32 of Windows related icon
+unsigned long default_icon_crc[] = {
+        0xeefa6488,
+        0x0798893a,
+        0xe06e1235,
+        0xb54fd1af,
+        0xc9c2b6c4,
+        0xbaa4c50b,
+	0xcec591e3,
+        0
+};
+
+typedef struct IconFile {
+    char                name[12];
+    struct IconFile     *next;
+}IconFile;
+
+struct IconFile *IconList = NULL;
+
+struct UPNPDevInfo IGDInfo;
+
+static char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+int
+openvpn_base64_encode(const void *data, int size, char **str) {
+    char *s, *p;
+    int i;
+    int c;
+    const unsigned char *q;
+
+    if (size < 0)
+                return -1;
+    p = s = (char *) malloc(size * 4 / 3 + 4);
+    if (p == NULL)
+                return -1;
+    q = (const unsigned char *) data;
+    i = 0;
+    for (i = 0; i < size;) {
+                c = q[i++];
+                c *= 256;
+                if (i < size)
+                        c += q[i];
+                i++;
+                c *= 256;
+                if (i < size)
+                        c += q[i];
+                i++;
+                p[0] = base64_chars[(c & 0x00fc0000) >> 18];
+                p[1] = base64_chars[(c & 0x0003f000) >> 12];
+                p[2] = base64_chars[(c & 0x00000fc0) >> 6];
+                p[3] = base64_chars[(c & 0x0000003f) >> 0];
+                if (i > size)
+                        p[3] = '=';
+                if (i > size + 1)
+                        p[2] = '=';
+                p += 4;
+    }
+    *p = 0;
+    *str = s;
+
+    return strlen(s);
+}
+
+int
+image_to_base64(char *file_path,  char *client_mac) {
+        FILE * pFile;
+        long lSize;
+        char *buffer;
+        char *base64;
+        size_t result;
+        int i;
+        char client_mac_temp[15];
+        memset(client_mac_temp, 0, sizeof(client_mac_temp));
+        sprintf(client_mac_temp, client_mac);
+
+printf("Store %s to jffs -> %s!!!\n", file_path, client_mac);
+        int idex = 0;
+        while ( client_mac_temp[idex] != 0 ) {
+                if ( ( client_mac_temp[idex] >= 'a' ) && ( client_mac_temp[idex] <= 'z' ) ) {
+                        client_mac_temp[idex] = client_mac_temp[idex] - 'a' + 'A';
+                }
+                idex++;
+        }
+
+        pFile = fopen (file_path , "rb");
+        if (pFile == NULL) {
+                printf("File error\n");
+                i = 0;
+                return i;
+        }
+
+        fseek (pFile , 0 , SEEK_END);
+        lSize = ftell (pFile);
+        rewind (pFile);
+
+        buffer = (char*) malloc (sizeof(char)*lSize);
+        base64 = (char*) malloc (sizeof(char)*lSize);
+
+        if (buffer == NULL) {
+                printf("Memory error\n");
+                i = 0;
+                return i;
+        }
+
+        result = fread (buffer,1,lSize,pFile);
+        if (result != lSize) {
+                printf("Reading error\n");
+                i = 0;
+                return i;
+        }	
+
+        if (openvpn_base64_encode (buffer, lSize, &base64) <= 0) { 
+                printf("binary encode error \n");
+                i = 0;
+                return i;
+        }
+
+        char image_base64[(strlen(base64) + 25)];
+        memset(image_base64, 0, sizeof(image_base64));
+
+        sprintf(image_base64, "data:image/jpeg;base64,");
+        strcat(image_base64, base64);
+
+        fclose (pFile);
+        free (buffer);
+        free (base64);
+
+        char write_file_path[35];
+        memset(write_file_path, 0, sizeof(write_file_path)); 
+
+        if(!check_if_dir_exist("/jffs/usericon"))
+                system("mkdir /jffs/usericon");
+
+        sprintf(write_file_path, "/jffs/usericon/%s.log", client_mac_temp);
+
+        if(!check_if_file_exist(write_file_path)) {
+                int str_len = strlen(image_base64);
+                int i;
+                FILE * pFile;
+                pFile = fopen (write_file_path , "w");
+
+                if (pFile == NULL) {
+                        printf("File error\n");
+                        i = 0;
+                        return i;
+                }
+
+                for(i = 0; i < str_len; i++) {
+                        fputc(image_base64[i], pFile);
+                }
+                fclose (pFile);
+        }
+
+        i = 1;
+        return i;
+}
+
+unsigned long get_icon_crc32(char *icon_path)
+{
+	FILE *icon_fd;
+        unsigned long calc_crc = 0;
+        long iconlen;
+        char buf[4096] = {0};
+
+	//printf("get icon crc32 open: %s\n", icon_path);
+
+	icon_fd = fopen(icon_path, "rb");
+
+	if(icon_fd == NULL) {
+		printf("Get Icon Failed!!!\n");
+		return -1;
+	}	
+
+        fseek (icon_fd , 0 , SEEK_END);
+        iconlen = ftell (icon_fd);
+        rewind (icon_fd);
+
+        while(iconlen>0)
+        {
+                if (iconlen > sizeof(buf))
+                {
+                        fread(buf, 1, sizeof(buf), icon_fd);
+                        calc_crc = crc_calc(calc_crc, (unsigned char*)buf, sizeof(buf));
+                        iconlen-=sizeof(buf);
+                }
+                else
+                {
+                        fread(buf, 1, iconlen, icon_fd);
+                        calc_crc = crc_calc(calc_crc, (unsigned char*)buf, iconlen);
+                        iconlen=0;
+                }
+        }
+
+	return calc_crc;
+}
+
+void get_icon_files(void)
+{
+        FILE *fp;
+        char *ico_ptr;
+        char buf[128];
+        struct IconFile *NextIcon = NULL, *ShowIcon;
+
+        sprintf(buf, "ls -1 %s/*.log", JFFS_ICON_PATH);
+
+        fp = popen(buf, "r");
+        if (fp == NULL) {
+                perror("popen");
+                return;
+        }
+
+#ifdef DEBUG
+printf("======= Get Icon Files =========\n");
+#endif
+        while(fgets(buf, sizeof(buf), fp))
+        {
+                IconFile *CurIcon = (IconFile *)malloc(sizeof(IconFile));
+
+                ico_ptr = buf;
+                ico_ptr+= strlen(JFFS_ICON_PATH)+1;
+
+                memcpy(CurIcon->name, ico_ptr, 12);
+                CurIcon->next = NULL;
+
+                if( IconList == NULL )
+                        IconList = CurIcon;
+                else
+                        NextIcon->next = CurIcon;
+                NextIcon = CurIcon;
+        }
+
+        ShowIcon = IconList;
+        while(ShowIcon != NULL)
+        {
+#ifdef DEBUG
+                printf("%s->", ShowIcon->name);
+#endif
+                ShowIcon = ShowIcon->next;
+        }
+#ifdef DEBUG
+        printf("\n===================================\n");
+#endif
+}
+
+void TransferUpnpIcon(P_CLIENT_DETAIL_INFO_TABLE nmp_client)
+{
+        FILE *fp;
+        char *ico_ptr, *ico_end;
+	char ico_ip[16], ico_mac[13], nmp_client_ip[16];
+        char buf[128];
+        struct IconFile *icon = NULL;
+	unsigned long icon_crc32;
+	int i, default_icon=0;
+
+        sprintf(buf, "ls -1 %s/*.ico", UPNP_ICON_PATH);
+
+        fp = popen(buf, "r");
+        if (fp == NULL) {
+                perror("popen");
+                return;
+        }
+
+#ifdef DEBUG
+printf("======= Transfer UPnP Icon Files =========\n");
+#endif
+        while(fgets(buf, sizeof(buf), fp))
+        {
+
+                ico_ptr = buf;
+                ico_ptr += strlen(UPNP_ICON_PATH)+1;
+		ico_end = strstr(buf, ".ico");
+
+		i = 0;
+		while(ico_ptr < ico_end) 
+			ico_ip[i++] = *ico_ptr++;
+		ico_ip[i] = '\0';
+		ico_end = ico_end+4;
+		*ico_end = '\0';
+		icon_crc32 = get_icon_crc32(buf);
+
+		//default icon crc32 check
+		i = 0;
+		default_icon = 0;
+		while((default_icon_crc[i] !=0 )) {
+			if(default_icon_crc[i] == icon_crc32) {
+				#ifdef DEBUG
+				printf("GET DEFAULT ICON CRC!!! %s\n", buf);
+				#endif
+				default_icon = 1;
+				break;
+			}
+			i++;
+		}
+
+		if(!default_icon) {
+		    i = 0;
+		    while( (nmp_client->ip_addr[i][0] != 0) && (i < 255) ) {
+			sprintf(nmp_client_ip, "%d.%d.%d.%d", nmp_client->ip_addr[i][0],
+				nmp_client->ip_addr[i][1],nmp_client->ip_addr[i][2],
+				nmp_client->ip_addr[i][3]);
+			if(!strcmp(ico_ip, nmp_client_ip)) {
+				sprintf(ico_mac, "%02X%02X%02X%02X%02X%02X",
+					nmp_client->mac_addr[i][0],
+					nmp_client->mac_addr[i][1],
+                                        nmp_client->mac_addr[i][2],
+                                        nmp_client->mac_addr[i][3],
+                                        nmp_client->mac_addr[i][4],
+                                        nmp_client->mac_addr[i][5]);
+				/* Compare icon in /jffs/usericon */
+                		icon = IconList;
+                		while( icon != NULL ) {
+                        		if( memcmp(icon->name, ico_mac, 12) == 0) {
+						break;
+                		        }
+                        		icon = icon->next;
+                		}
+
+            			if( icon == NULL ) { /* new icon store to /jffs/usericon */
+					image_to_base64(buf, ico_mac);
+
+            			}
+				break;
+			}
+			i++;
+		    }
+		}
+	}
+}
+#endif
+
 /* protofix() checks if protocol is "UDP" or "TCP"
  * returns NULL if not */
 const char * protofix(const char * proto)
@@ -52,6 +411,15 @@ static void DisplayInfos(struct UPNPUrls * urls,
 	unsigned int brUp, brDown;
 	time_t timenow, timestarted;
 	int r;
+/*
+printf("===== DisplayInfos ====\n");
+printf("controlURL:   %s\n", urls->controlURL);
+printf("ipcondescURL: %s\n", urls->ipcondescURL);
+printf("rootdescURL:  %s\n", urls->rootdescURL);
+printf("controlURL_CIF: %s\n", urls->controlURL_CIF);
+printf("controlURL_6FC: %s\n", urls->controlURL_6FC);
+printf("=======================\n");
+*/
 	if(UPNP_GetConnectionTypeInfo(urls->controlURL,
 	                              data->first.servicetype,
 	                              connectionType) != UPNPCOMMAND_SUCCESS)
@@ -539,9 +907,12 @@ int main(int argc, char ** argv)
 		return -1;
 	}
 #endif
+/*
     printf("upnpc : miniupnpc library test client. (c) 2005-2014 Thomas Bernard\n");
     printf("Go to http://miniupnp.free.fr/ or http://miniupnp.tuxfamily.org/\n"
-	       "for more information.\n");
+           "for more information.\n");
+*/
+
 	/* command line processing */
 	for(i=1; i<argc; i++)
 	{
@@ -610,30 +981,92 @@ int main(int argc, char ** argv)
 		return 1;
 	}
 
+#if 0
 	if( rootdescurl
 	  || (devlist = upnpDiscover(2000, multicastif, minissdpdpath,
 	                             0/*sameport*/, ipv6, &error)))
+#endif
+
+#ifdef RTCONFIG_JFFS2USERICON
+        if(!check_if_dir_exist("/tmp/upnpicon")) 
+                system("mkdir /tmp/upnpicon");
+#endif
+
+	int x = 0;
+	while(x<3)
+	{
+		devlist = upnpDiscoverAll(2000, multicastif, minissdpdpath, 1, ipv6, &error);
+		if(devlist)
+			break;
+		x++;
+		sleep(6);
+	}
+
+	if(devlist)
 	{
 		struct UPNPDev * device;
 		struct UPNPUrls urls;
 		struct IGDdatas data;
 		if(devlist)
 		{
+#ifdef DEBUG
 			printf("List of UPNP devices found on the network :\n");
 			for(device = devlist; device; device = device->pNext)
 			{
 				printf(" desc: %s\n st: %s\n\n",
 					   device->descURL, device->st);
 			}
+#endif
 		}
 		else
 		{
 			printf("upnpDiscover() error code=%d\n", error);
 		}
+
 		i = 1;
-		if( (rootdescurl && UPNP_GetIGDFromUrl(rootdescurl, &urls, &data, lanaddr, sizeof(lanaddr)))
-		  || (i = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr))))
+
+		if(i = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr)))
 		{
+			FILE *fp;
+		        int i, shm_client_info_id;
+		        void *shared_client_info=(void *) 0;
+		        int lock;
+
+			if(fp = fopen("/tmp/miniupnpc.log", "w"))
+			{
+				for(device = devlist; device; device = device->pNext)
+			        {
+					if(strcmp(device->DevInfo.hostname, ""))
+					{
+				                fprintf(fp,"%s>", device->DevInfo.hostname);
+				                fprintf(fp,"%s>", device->DevInfo.type);
+				                fprintf(fp,"%s\n", device->DevInfo.friendlyName);
+					}
+				}
+				fclose(fp);
+			}
+
+#ifdef RTCONFIG_JFFS2USERICON
+			get_icon_files();
+		        lock = file_lock("networkmap");
+		        shm_client_info_id = shmget((key_t)1001, sizeof(CLIENT_DETAIL_INFO_TABLE), 0666| IPC_CREAT);
+		        if (shm_client_info_id == -1){
+		            	perror("shmget failed:\n");
+		            	file_unlock(lock);
+		            	return 0;
+		        }
+
+		        shared_client_info = shmat(shm_client_info_id,(void *) 0,SHM_RDONLY);
+		        if (shared_client_info == (void *)-1){
+		                printf("shmat failed\n");
+                		file_unlock(lock);
+		                return 0;
+		        }
+
+			TransferUpnpIcon(shared_client_info);
+#endif
+			
+#ifdef DEBUG
 			switch(i) {
 			case 1:
 				printf("Found valid IGD : %s\n", urls.controlURL);
@@ -651,6 +1084,7 @@ int main(int argc, char ** argv)
 				printf("Trying to continue anyway\n");
 			}
 			printf("Local LAN ip address : %s\n", lanaddr);
+#endif
 			#if 0
 			printf("getting \"%s\"\n", urls.ipcondescURL);
 			descXML = miniwget(urls.ipcondescURL, &descXMLsize);
@@ -749,6 +1183,8 @@ int main(int argc, char ** argv)
 				printf("Presentation URL found:\n");
 				printf("            %s\n", data.presentationurl);
 				break;
+			case 't':
+				break;			
 			default:
 				fprintf(stderr, "Unknown switch -%c\n", command);
 				retcode = 1;
@@ -761,6 +1197,7 @@ int main(int argc, char ** argv)
 			fprintf(stderr, "No valid UPNP Internet Gateway Device found.\n");
 			retcode = 1;
 		}
+
 		freeUPNPDevlist(devlist); devlist = 0;
 	}
 	else

@@ -1,4 +1,4 @@
-/* $Id: miniupnpc.h,v 1.34 2014/01/31 13:18:25 nanard Exp $ */
+/* $Id: miniupnpc.h,v 1.38 2014/11/17 09:41:33 nanard Exp $ */
 /* Project: miniupnp
  * http://miniupnp.free.fr/
  * Author: Thomas Bernard
@@ -18,7 +18,7 @@
 #define UPNPDISCOVER_MEMORY_ERROR (-102)
 
 /* versions : */
-#define MINIUPNPC_VERSION	"1.9"
+#define MINIUPNPC_VERSION	"1.9.20141128"
 #define MINIUPNPC_API_VERSION	12
 
 #ifdef __cplusplus
@@ -33,12 +33,20 @@ simpleUPnPcommand(int, const char *, const char *,
                   const char *, struct UPNParg *,
                   int *);
 
+struct UPNPDevInfo {
+        char hostname[65];
+        char type[32];
+        char friendlyName[32];
+        char iconUrl[128];
+};
+
 struct UPNPDev {
 	struct UPNPDev * pNext;
 	char * descURL;
 	char * st;
 	unsigned int scope_id;
 	char buffer[2];
+	struct UPNPDevInfo DevInfo;
 };
 
 /* upnpDiscover()
@@ -117,8 +125,8 @@ struct UPNPUrls {
 MINIUPNP_LIBSPEC int
 UPNP_GetValidIGD(struct UPNPDev * devlist,
                  struct UPNPUrls * urls,
-				 struct IGDdatas * data,
-				 char * lanaddr, int lanaddrlen);
+		 struct IGDdatas * data,
+		 char * lanaddr, int lanaddrlen);
 
 /* UPNP_GetIGDFromUrl()
  * Used when skipping the discovery process.

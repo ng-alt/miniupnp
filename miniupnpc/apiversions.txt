@@ -1,4 +1,4 @@
-$Id: apiversions.txt,v 1.3 2014/01/31 13:14:32 nanard Exp $
+$Id: apiversions.txt,v 1.5 2014/11/17 09:41:32 nanard Exp $
 
 Differences in API between miniUPnPc versions
 

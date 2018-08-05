@@ -1,4 +1,4 @@
-/* $Id: upnpcommands.c,v 1.42 2014/01/31 13:18:25 nanard Exp $ */
+/* $Id: upnpcommands.c,v 1.44 2014/06/10 09:44:07 nanard Exp $ */
 /* Project : miniupnp
  * Author : Thomas Bernard
  * Copyright (c) 2005-2012 Thomas Bernard
@@ -192,13 +192,16 @@ UPNP_GetConnectionTypeInfo(const char * controlURL,
 	char * p;
 	int ret = UPNPCOMMAND_UNKNOWN_ERROR;
 
+printf("0\n");
 	if(!connectionType)
 		return UPNPCOMMAND_INVALID_ARGS;
+printf("1\n");
 
 	if(!(buffer = simpleUPnPcommand(-1, controlURL, servicetype,
 	                                "GetConnectionTypeInfo", 0, &bufsize))) {
 		return UPNPCOMMAND_HTTP_ERROR;
 	}
+printf("2\n");
 	ParseNameValue(buffer, bufsize, &pdata);
 	free(buffer); buffer = NULL;
 	p = GetValueFromNameValueList(&pdata, "NewConnectionType");
@@ -216,6 +219,7 @@ UPNP_GetConnectionTypeInfo(const char * controlURL,
 		sscanf(p, "%d", &ret);
 	}
 	ClearNameValueList(&pdata);
+printf("3\n");
 	return ret;
 }
 
