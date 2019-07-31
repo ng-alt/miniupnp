@@ -19,7 +19,9 @@ endif
 #CFLAGS += -I/usr/local/include
 CFLAGS += $(shell $(PKG_CONFIG) --cflags libevent)
 
-#CFLAGS += -DENABLE_UPNP_EVENTS
+ifeq ($(shell if $(PKG_CONFIG) --atleast-version 2.2 libevent ; then echo "true" ; fi),true)
+CFLAGS += -DENABLE_UPNP_EVENTS
+endif
 
 #LDLIBS   = -levent
 LDLIBS   = $(shell $(PKG_CONFIG) --libs-only-l libevent)
@@ -47,6 +49,9 @@ EXECUTABLE = upnpc-libevent
 .PHONY:	all clean depend
 
 all:	$(EXECUTABLE)
+
+check:
+	@echo "To be implemented"
 
 clean:
 	$(RM) $(OBJS)

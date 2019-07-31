@@ -1,4 +1,24 @@
+<<<<<<< HEAD
 $Id: Changelog.txt,v 1.45 2016/03/01 18:06:46 nanard Exp $
+=======
+$Id: Changelog.txt,v 1.50 2019/02/10 13:45:24 nanard Exp $
+
+2018/12/18:
+	updateDevice() remove element from the list when realloc fails
+
+2018/05/08:
+	fix test shell scripts for *BSD
+
+2018/02/23:
+	Fix build with IPv6 disabled and SSDP_LISTEN_ON_SPECIFIC_ADDR enabled
+
+2018/02/03:
+	Properly parse several requests read() at once
+	Ignore the version of devices while answering to requests
+
+2016/11/11:
+	Fix for Solaris build
+>>>>>>> 3cf6e
 
 2016/03/01:
 	Fix broken overflow test (p+l > buf+n) thanks to Salva Peiro

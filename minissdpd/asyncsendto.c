@@ -1,7 +1,14 @@
+<<<<<<< HEAD
 /* $Id: asyncsendto.c,v 1.7 2015/09/03 18:19:20 nanard Exp $ */
 /* MiniUPnP project
  * http://miniupnp.free.fr/ or http://miniupnp.tuxfamily.org/
  * (c) 2006-2014 Thomas Bernard
+=======
+/* $Id: asyncsendto.c,v 1.10 2018/07/06 11:44:59 nanard Exp $ */
+/* MiniUPnP project
+ * http://miniupnp.free.fr/ or http://miniupnp.tuxfamily.org/
+ * (c) 2006-2018 Thomas Bernard
+>>>>>>> 3cf6e
  * This software is subject to the conditions detailed
  * in the LICENCE file provided within the distribution */
 
@@ -120,7 +127,7 @@ sendto_schedule2(int sockfd, const void *buf, size_t len, int flags,
 	}
 
 	/* schedule */
-	if(gettimeofday(&tv, 0) < 0) {
+	if(upnp_gettimeofday(&tv) < 0) {
 		return -1;
 	}
 	/* allocate enough space for structure + buffers */
@@ -283,7 +290,7 @@ void finalize_sendto(void)
 	struct timeval timeout;
 	int max_fd;
 
-	if(gettimeofday(&deadline, NULL) < 0) {
+	if(upnp_gettimeofday(&deadline) < 0) {
 		syslog(LOG_ERR, "gettimeofday: %m");
 		return;
 	}
@@ -317,7 +324,7 @@ void finalize_sendto(void)
 			free(elt);
 		}
 		/* check deadline */
-		if(gettimeofday(&now, NULL) < 0) {
+		if(upnp_gettimeofday(&now) < 0) {
 			syslog(LOG_ERR, "gettimeofday: %m");
 			return;
 		}
@@ -345,4 +352,3 @@ void finalize_sendto(void)
 		}
 	}
 }
-
